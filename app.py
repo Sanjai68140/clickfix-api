@@ -1,9 +1,29 @@
 from flask import Flask, request
+import razorpay
 
 app = Flask(__name__)
 
-@app.route('/webhook', methods=['POST'])
-def razorpay_webhook():
-    data = request.get_json()
-    print("Webhook received:", data)
-    return '', 200
+# Razorpay client setup (replace with your actual keys)
+razorpay_client = razorpay.Client(auth=("rzp_test_R6StCDC86N3nXo", "JVTxQJs7CagOgc8nSGMEdMKB"))
+
+@app.route('/')
+def home():
+    return "ClickFix API is live!"
+
+@app.route('/create_order', methods=['POST'])
+def create_order():
+    data = request.json
+    amount = data.get('amount')
+    currency = data.get('currency', 'INR')
+    receipt = data.get('receipt', 'receipt#1')
+
+    order = razorpay_client.order.create({
+        "amount": amount,
+        "currency": currency,
+        "receipt": receipt,
+        "payment_capture": 1
+    })
+    return order
+
+if __name__ == '__main__':
+    app.run(debug=True)
