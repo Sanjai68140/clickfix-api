@@ -18,6 +18,40 @@ razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 DB = "fantasy_lock_bot.db"
 
 
+def init_db():
+    with sqlite3.connect(DB) as conn:
+        c = conn.cursor()
+
+        # Create tables if they don’t exist
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                match_name TEXT,
+                razorpay_order_id TEXT,
+                paid INTEGER DEFAULT 0,
+                paid_at TEXT,
+                payment_link_url TEXT,
+                UNIQUE(user_id, match_name)
+            )
+        ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS matches (
+                match_name TEXT PRIMARY KEY,
+                creator_id INTEGER,
+                description TEXT,
+                filename TEXT,
+                price INTEGER,
+                expires_at TEXT
+            )
+        ''')
+
+        # Add other tables if needed (creators, withdrawals etc.)
+
+        conn.commit()
+
+
 def mark_payment_paid(user_id, match_name):
     with sqlite3.connect(DB) as conn:
         c = conn.cursor()
@@ -26,6 +60,7 @@ def mark_payment_paid(user_id, match_name):
             (datetime.now().isoformat(), user_id, match_name),
         )
         conn.commit()
+
 
 def send_telegram_locked_message(user_id, filename, description):
     try:
@@ -39,6 +74,7 @@ def send_telegram_locked_message(user_id, filename, description):
             requests.post(url, data={"chat_id": user_id, "text": text})
     except Exception as e:
         print(f"Error sending Telegram message: {e}")
+
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -91,7 +127,7 @@ def webhook():
 def home():
     return "ClickFix API running!"
 
-
 if __name__ == "__main__":
+    init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
