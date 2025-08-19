@@ -1,5 +1,12 @@
 from flask import Flask, request
 import razorpay
+@app.route('/webhook', methods=['POST'])
+@app.route('/webhook/', methods=['POST'])
+def webhook():
+    print("Webhook hit! Method:", request.method)
+    data = request.json
+    print("Webhook JSON:", data)
+    return {"status": "ok"}, 200
 
 app = Flask(__name__)
 
@@ -27,3 +34,4 @@ def create_order():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
