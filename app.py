@@ -2,11 +2,14 @@ import os
 import razorpay
 import sqlite3
 import requests
+import logging
 from datetime import datetime
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
+
 app = Flask(__name__)
 
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
@@ -59,21 +62,28 @@ def send_telegram_locked_message(user_id, filename, description):
         else:
             text = f"🎉 Payment received! Your content '{description}' is unlocked."
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": user_id, "text": text})
+        resp = requests.post(url, data={"chat_id": user_id, "text": text}, timeout=10)
+        resp.raise_for_status()
+        logging.info(f"Sent Telegram unlock message to {user_id}")
     except Exception as e:
-        print(f"Error sending Telegram message: {e}")
+        logging.error(f"Failed to send Telegram message to {user_id}: {e}")
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     signature = request.headers.get("X-Razorpay-Signature")
     try:
         body_str = request.data.decode('utf-8')
+    except Exception as e:
+        logging.error(f"Failed to decode webhook body: {e}")
+        return jsonify({"status": "failure", "reason": "bad request"}), 400
+
+    try:
         razorpay_client.utility.verify_webhook_signature(body_str, signature, RAZORPAY_KEY_SECRET)
     except razorpay.errors.SignatureVerificationError:
-        print("Signature verification failed!")
+        logging.error("Invalid Razorpay webhook signature!")
         return jsonify({"status": "failure", "reason": "invalid signature"}), 400
     except Exception as e:
-        print(f"Error during signature verification: {e}")
+        logging.error(f"Error during signature verification: {e}")
         return jsonify({"status": "failure", "reason": "server error"}), 500
 
     try:
@@ -84,6 +94,7 @@ def webhook():
         elif "payment" in webhook_data.get("payload", {}):
             entity = webhook_data["payload"]["payment"].get("entity", {})
         else:
+            logging.error("Webhook payload missing entity section")
             return jsonify({"status": "failure", "reason": "missing entity"}), 400
 
         notes = entity.get("notes", {})
@@ -92,24 +103,28 @@ def webhook():
 
         if user_id and match_name:
             mark_payment_paid(user_id, match_name)
-
             with sqlite3.connect(DB) as conn:
                 c = conn.cursor()
                 c.execute("SELECT filename, description FROM matches WHERE match_name=?", (match_name,))
                 row = c.fetchone()
+
             if row:
                 filename, description = row
                 send_telegram_locked_message(user_id, filename, description)
+            else:
+                logging.warning(f"Match not found in DB for match_name: {match_name}")
 
-            print(f"Payment marked and user notified for user {user_id} match {match_name}")
+            logging.info(f"Payment marked paid and user notified for user {user_id}, match {match_name}")
+        else:
+            logging.warning("user_id or match_name missing in webhook notes")
 
         return jsonify({"status": "success"}), 200
-    
+
     except sqlite3.OperationalError as e:
-        print(f"Database error: {e}")
+        logging.error(f"Database error during webhook processing: {e}")
         return jsonify({"status": "failure", "reason": "database error"}), 500
     except Exception as e:
-        print(f"Error processing webhook data: {e}")
+        logging.error(f"General error during webhook processing: {e}")
         return jsonify({"status": "failure", "reason": "server error"}), 500
 
 @app.route('/')
@@ -117,6 +132,5 @@ def home():
     return "ClickFix API Running"
 
 if __name__ == "__main__":
-    init_db()  # Ensure tables exist
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    init_db()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
