@@ -15,6 +15,7 @@ RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
 razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 DB = "fantasy_lock_bot.db"
 
+
 def mark_payment_paid(user_id, match_name):
     with sqlite3.connect(DB) as conn:
         c = conn.cursor()
@@ -23,6 +24,7 @@ def mark_payment_paid(user_id, match_name):
             (datetime.now().isoformat(), user_id, match_name),
         )
         conn.commit()
+
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -56,9 +58,11 @@ def webhook():
         print("Signature verification failed!")
         return jsonify({"status": "failure", "reason": "invalid signature"}), 400
 
+
 @app.route('/')
 def home():
     return "ClickFix API running!"
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
