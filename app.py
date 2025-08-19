@@ -4,10 +4,9 @@ import os
 
 app = Flask(__name__)
 
-# Get keys from environment (more secure for Render)
+# Use env variables or hardcoded creds for Razorpay for now
 RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID', 'rzp_test_R6StCDC86N3nXo')
 RAZORPAY_KEY_SECRET = os.getenv('RAZORPAY_KEY_SECRET', 'JVTxQJs7CagOgc8nSGMEdMKB')
-
 razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 @app.route('/')
@@ -28,17 +27,13 @@ def create_order():
     })
     return jsonify(order)
 
-# ---- WEBHOOK ROUTE ----
-@app.route('/webhook', methods=['POST'])
-@app.route('/webhook/', methods=['POST'])
+@app.route('/webhook', methods=['POST', 'GET'])
+@app.route('/webhook/', methods=['POST', 'GET'])
 def webhook():
     print("Webhook hit! Method:", request.method)
     print("Headers:", dict(request.headers))
-    print("Webhook JSON:", request.json)
-    # In production, you should verify signature and act on event!
+    print("Payload:", request.data)
     return jsonify({"status": "ok"}), 200
-# -----------------------
 
 if __name__ == '__main__':
-    # Always set host/port explicitly for platforms like Render
     app.run(host="0.0.0.0", port=5000)
