@@ -10,14 +10,15 @@ from dotenv import load_dotenv
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
-app = Flask(__name__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB = os.path.join(BASE_DIR, "fantasy_lock_bot.db")
 
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
 RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
+app = Flask(__name__)
 razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
-DB = "fantasy_lock_bot.db"
 
 def init_db():
     with sqlite3.connect(DB) as conn:
@@ -44,6 +45,17 @@ def init_db():
                 UNIQUE(user_id, match_name)
             )
         ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS withdrawals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                username TEXT,
+                amount INTEGER,
+                upi TEXT,
+                status TEXT,
+                requested_at TEXT
+            )
+        ''')
         conn.commit()
 
 def mark_payment_paid(user_id, match_name):
@@ -64,7 +76,7 @@ def send_telegram_locked_message(user_id, filename, description):
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         resp = requests.post(url, data={"chat_id": user_id, "text": text}, timeout=10)
         resp.raise_for_status()
-        logging.info(f"Sent Telegram unlock message to {user_id}")
+        logging.info(f"Sent Telegram message to {user_id}")
     except Exception as e:
         logging.error(f"Failed to send Telegram message to {user_id}: {e}")
 
@@ -73,11 +85,6 @@ def webhook():
     signature = request.headers.get("X-Razorpay-Signature")
     try:
         body_str = request.data.decode('utf-8')
-    except Exception as e:
-        logging.error(f"Failed to decode webhook body: {e}")
-        return jsonify({"status": "failure", "reason": "bad request"}), 400
-
-    try:
         razorpay_client.utility.verify_webhook_signature(body_str, signature, RAZORPAY_KEY_SECRET)
     except razorpay.errors.SignatureVerificationError:
         logging.error("Invalid Razorpay webhook signature!")
@@ -94,7 +101,7 @@ def webhook():
         elif "payment" in webhook_data.get("payload", {}):
             entity = webhook_data["payload"]["payment"].get("entity", {})
         else:
-            logging.error("Webhook payload missing entity section")
+            logging.error("Webhook payload missing entity")
             return jsonify({"status": "failure", "reason": "missing entity"}), 400
 
         notes = entity.get("notes", {})
@@ -103,6 +110,7 @@ def webhook():
 
         if user_id and match_name:
             mark_payment_paid(user_id, match_name)
+
             with sqlite3.connect(DB) as conn:
                 c = conn.cursor()
                 c.execute("SELECT filename, description FROM matches WHERE match_name=?", (match_name,))
@@ -112,19 +120,19 @@ def webhook():
                 filename, description = row
                 send_telegram_locked_message(user_id, filename, description)
             else:
-                logging.warning(f"Match not found in DB for match_name: {match_name}")
+                logging.warning(f"Match not found: {match_name}")
 
-            logging.info(f"Payment marked paid and user notified for user {user_id}, match {match_name}")
+            logging.info(f"Payment marked and user notified for user {user_id} match {match_name}")
         else:
-            logging.warning("user_id or match_name missing in webhook notes")
+            logging.warning("Missing user_id or match_name in webhook notes")
 
         return jsonify({"status": "success"}), 200
 
     except sqlite3.OperationalError as e:
-        logging.error(f"Database error during webhook processing: {e}")
+        logging.error(f"Database error during webhook: {e}")
         return jsonify({"status": "failure", "reason": "database error"}), 500
     except Exception as e:
-        logging.error(f"General error during webhook processing: {e}")
+        logging.error(f"Error processing webhook: {e}")
         return jsonify({"status": "failure", "reason": "server error"}), 500
 
 @app.route('/')
