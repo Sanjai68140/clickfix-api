@@ -7,7 +7,6 @@ from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 
 load_dotenv()
-
 app = Flask(__name__)
 
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
@@ -17,12 +16,19 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 DB = "fantasy_lock_bot.db"
 
-
 def init_db():
     with sqlite3.connect(DB) as conn:
         c = conn.cursor()
-
-        # Create tables if they don’t exist
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS matches (
+                match_name TEXT PRIMARY KEY,
+                creator_id INTEGER,
+                description TEXT,
+                filename TEXT,
+                price INTEGER,
+                expires_at TEXT
+            )
+        ''')
         c.execute('''
             CREATE TABLE IF NOT EXISTS payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,22 +41,7 @@ def init_db():
                 UNIQUE(user_id, match_name)
             )
         ''')
-
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS matches (
-                match_name TEXT PRIMARY KEY,
-                creator_id INTEGER,
-                description TEXT,
-                filename TEXT,
-                price INTEGER,
-                expires_at TEXT
-            )
-        ''')
-
-        # Add other tables if needed (creators, withdrawals etc.)
-
         conn.commit()
-
 
 def mark_payment_paid(user_id, match_name):
     with sqlite3.connect(DB) as conn:
@@ -61,20 +52,16 @@ def mark_payment_paid(user_id, match_name):
         )
         conn.commit()
 
-
 def send_telegram_locked_message(user_id, filename, description):
     try:
         if filename and filename.startswith("http"):
             text = f"🎉 Payment received! Your content is unlocked:\n{filename}"
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-            requests.post(url, data={"chat_id": user_id, "text": text})
-        elif filename:
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        else:
             text = f"🎉 Payment received! Your content '{description}' is unlocked."
-            requests.post(url, data={"chat_id": user_id, "text": text})
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        requests.post(url, data={"chat_id": user_id, "text": text})
     except Exception as e:
         print(f"Error sending Telegram message: {e}")
-
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -114,20 +101,22 @@ def webhook():
                 filename, description = row
                 send_telegram_locked_message(user_id, filename, description)
 
-            print(f"Payment marked paid and Telegram notified for user {user_id} match {match_name}")
+            print(f"Payment marked and user notified for user {user_id} match {match_name}")
 
         return jsonify({"status": "success"}), 200
-        
+    
+    except sqlite3.OperationalError as e:
+        print(f"Database error: {e}")
+        return jsonify({"status": "failure", "reason": "database error"}), 500
     except Exception as e:
         print(f"Error processing webhook data: {e}")
         return jsonify({"status": "failure", "reason": "server error"}), 500
 
-
 @app.route('/')
 def home():
-    return "ClickFix API running!"
+    return "ClickFix API Running"
 
 if __name__ == "__main__":
-    init_db()
+    init_db()  # Ensure tables exist
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
