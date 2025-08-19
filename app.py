@@ -17,29 +17,30 @@ razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 @app.route('/webhook', methods=['POST'])
 def webhook():
     signature = request.headers.get("X-Razorpay-Signature")
-    body = request.data
+    body_bytes = request.data
+    body_str = body_bytes.decode('utf-8')  # Decode bytes to string
 
     print("Received signature:", signature)
-    print("Raw request body:", body)
+    print("Raw request body (decoded):", body_str)
 
-    # Use Razorpay SDK utility for webhook signature verification
     try:
-        razorpay_client.utility.verify_webhook_signature(request.data, signature, RAZORPAY_KEY_SECRET)
+        razorpay_client.utility.verify_webhook_signature(body_str, signature, RAZORPAY_KEY_SECRET)
         print("Signature verification succeeded")
-
-        # Process webhook payload
         webhook_data = request.json
-        print("Webhook JSON:", webhook_data)
+        print("Webhook payload:", webhook_data)
 
-        # Your logic here – example: just returning success
+        # Your business logic goes here:
+        # Extract data and deliver content, update database, etc.
+
         return jsonify({"status": "success"}), 200
-
     except razorpay.errors.SignatureVerificationError:
         print("Signature verification failed!")
         return jsonify({"status": "failure", "reason": "invalid signature"}), 400
 
+@app.route('/')
+def home():
+    return "ClickFix API is live!"
 
 if __name__ == '__main__':
-    # Use PORT from env or default 5000
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
